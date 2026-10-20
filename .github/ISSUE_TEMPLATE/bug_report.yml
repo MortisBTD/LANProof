@@ -1,0 +1,40 @@
+name: Ошибка
+description: Воспроизводимый сбой приложения или неверное измерение
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Не прикладывайте личные базы и токены. Проверьте отчёт на персональные сведения.
+  - type: input
+    id: version
+    attributes:
+      label: Версия или commit
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Окружение
+      description: Версия Windows, Ethernet/Wi-Fi, VPN или прокси при наличии.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Фактическое поведение
+      description: Можно приложить скриншот или обезличенный фрагмент отчёта.
+    validations:
+      required: true

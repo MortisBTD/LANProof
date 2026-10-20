@@ -21,6 +21,9 @@ if font.exists():
 shutil.copy2(project / 'README.md', package / 'README.md')
 shutil.copy2(project / 'LICENSE', package / 'LICENSE')
 shutil.copytree(project / 'assets', package / 'assets', dirs_exist_ok=True)
+shutil.copytree(project / 'docs', package / 'docs', dirs_exist_ok=True)
+for document in ('CONTRIBUTING.md', 'CHANGELOG.md', 'SECURITY.md'):
+    shutil.copy2(project / document, package / document)
 (package / 'START-HERE.txt').write_text('''LANProof 0.1 — приборный интерфейс
 
 Запуск: LANProof.exe. Установка .NET не требуется.
@@ -116,7 +119,7 @@ for name, library in sorted(assets['libraries'].items()):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, target)
 (package / 'THIRD-PARTY-NOTICES.md').write_text('\n'.join(notices), encoding='utf-8')
-archive = outputs / 'LANProof-Liquid-Glass.zip'
+archive = outputs / 'LANProof-Windows-x64-0.1.0.zip'
 with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as bundle:
     for path in sorted(package.rglob('*')):
         if path.is_file():
