@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "description": "Build LANProof brand assets from original SVG sources",
+  "scripts": { "assets": "node build-assets.cjs" },
+  "dependencies": { "sharp": "^0.34.0" }
+}

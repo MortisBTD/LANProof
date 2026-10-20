@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>0.1.0</Version>
+    <Product>LANProof</Product>
+    <AssemblyName>LANProof</AssemblyName>
+    <ApplicationIcon>..\..\assets\app\AppIcon.ico</ApplicationIcon>
+    <Description>Evidence-based home network diagnostics</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="..\..\assets\app\AppIcon.ico" Link="Assets/AppIcon.ico" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.8" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.8" />
+    <ProjectReference Include="..\LANProof.Core\LANProof.Core.csproj" />
+    <ProjectReference Include="..\LANProof.Probes\LANProof.Probes.csproj" />
+    <ProjectReference Include="..\LANProof.Data\LANProof.Data.csproj" />
+    <ProjectReference Include="..\LANProof.Export\LANProof.Export.csproj" />
+    <ProjectReference Include="..\LANProof.Runtime\LANProof.Runtime.csproj" />
+  </ItemGroup>
+</Project>
