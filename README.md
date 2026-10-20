@@ -6,7 +6,6 @@
 
 <p align="center">
   <a href="https://github.com/MortisBTD/LANProof/releases"><img src="https://img.shields.io/github/v/release/MortisBTD/LANProof?include_prereleases&label=release&color=087cf4" alt="Версия"></a>
-  <a href="https://github.com/MortisBTD/LANProof/actions/workflows/ci.yml"><img src="https://github.com/MortisBTD/LANProof/actions/workflows/ci.yml/badge.svg" alt="Windows CI"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20x64-087cf4" alt="Windows x64">
   <img src="https://img.shields.io/badge/.NET-8-512bd4" alt=".NET 8">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/MortisBTD/LANProof?color=12815e" alt="MIT License"></a>
