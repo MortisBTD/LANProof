@@ -50,6 +50,13 @@ public static class LanProofDbContextFactory
                     using (var reader = command.ExecuteReader())
                         while (reader.Read()) hasConclusive |= reader.GetString(1) == "IsConclusive";
                     if (!hasConclusive) context.Database.ExecuteSqlRaw("ALTER TABLE ProbeResults ADD COLUMN IsConclusive INTEGER NOT NULL DEFAULT 1");
+                    command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('ProbeResults') WHERE name='ClockUncertaintyMs'";
+                    if (Convert.ToInt32(command.ExecuteScalar()) == 0)
+                        context.Database.ExecuteSqlRaw("ALTER TABLE ProbeResults ADD COLUMN ClockUncertaintyMs REAL NULL DEFAULT 0");
+                    context.Database.ExecuteSqlRaw("CREATE TABLE IF NOT EXISTS CompanionReceipts (DeviceId TEXT NOT NULL, Sequence INTEGER NOT NULL, TimestampUtcMs INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(DeviceId, Sequence))");
+                    command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('CompanionReceipts') WHERE name='TimestampUtcMs'";
+                    if (Convert.ToInt32(command.ExecuteScalar()) == 0)
+                        context.Database.ExecuteSqlRaw("ALTER TABLE CompanionReceipts ADD COLUMN TimestampUtcMs INTEGER NOT NULL DEFAULT 0");
                     command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='DiagnosticReports'";
                     if (Convert.ToInt32(command.ExecuteScalar()) > 0)
                     {

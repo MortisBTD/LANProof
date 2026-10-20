@@ -55,3 +55,9 @@ work/
 data/
 tools/node_modules/
 .avalonia-build-tasks/
+**/.gradle/
+**/.kotlin/
+**/build/
+**/local.properties
+*.jks
+*.keystore

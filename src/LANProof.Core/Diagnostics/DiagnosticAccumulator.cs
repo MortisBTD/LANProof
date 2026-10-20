@@ -108,7 +108,7 @@ public sealed class DiagnosticAccumulator(ProbeConfiguration? configuration = nu
             report.DetailedAnalysis+="В эти моменты отказов не обнаружено. Короткие сбои между циклами могли остаться незамеченными.";
             report.Recommendations.Add("Оставьте мониторинг включённым до повторения проблемы.");
         }
-        report.Recommendations.Add("Сопоставьте время сбоя с другим устройством. Автоматическая синхронизация Android появится в следующем этапе.");
+        report.Recommendations.Add("Сопоставьте время сбоя с Android-компаньоном. Общий вывод требует измерений обоих устройств и согласованного времени.");
         return report;
     }
 

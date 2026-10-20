@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
     <ProjectReference Include="..\LANProof.Core\LANProof.Core.csproj" />
     <ProjectReference Include="..\LANProof.Data\LANProof.Data.csproj" />
     <ProjectReference Include="..\LANProof.Probes\LANProof.Probes.csproj" />

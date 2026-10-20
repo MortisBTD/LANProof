@@ -5,13 +5,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.1.0</Version>
+    <Version>0.2.0-beta.1</Version>
     <Product>LANProof</Product>
     <AssemblyName>LANProof</AssemblyName>
     <ApplicationIcon>..\..\assets\app\AppIcon.ico</ApplicationIcon>
     <Description>Evidence-based home network diagnostics</Description>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="QRCoder" Version="1.6.0" />
     <AvaloniaResource Include="..\..\assets\app\AppIcon.ico" Link="Assets/AppIcon.ico" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.8" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.8" />

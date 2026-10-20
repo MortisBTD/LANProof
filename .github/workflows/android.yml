@@ -1,0 +1,57 @@
+name: Android companion CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-test-interop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GRADLE_USER_HOME: ${{ github.workspace }}/work/gradle
+      LANPROOF_INTEROP_DIR: ${{ github.workspace }}/work/interop
+      LANPROOF_ANDROID_QA_DIR: ${{ github.workspace }}/work/android-preview
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 8.0.x
+      - name: Android SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Build loopback interop peer
+        run: dotnet build tests/LANProof.CompanionHarness -c Release -o work/harness
+      - name: Test, lint and assemble APK
+        shell: bash
+        run: |
+          mkdir -p "$LANPROOF_INTEROP_DIR"
+          dotnet work/harness/LANProof.CompanionHarness.dll "$LANPROOF_INTEROP_DIR" > work/interop-peer.log 2>&1 &
+          peer_pid=$!
+          trap 'kill "$peer_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if [ -f "$LANPROOF_INTEROP_DIR/server.json" ]; then break; fi
+            sleep 1
+          done
+          test -f "$LANPROOF_INTEROP_DIR/server.json"
+          bash android/gradlew -p android :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --console plain
+      - name: Upload APK and test evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: android-companion-debug
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/reports/tests/
+            android/app/build/reports/lint-results-debug.*
+            work/android-preview/
+          retention-days: 7

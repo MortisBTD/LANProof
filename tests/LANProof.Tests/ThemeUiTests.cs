@@ -91,7 +91,7 @@ public sealed class ThemeUiTests
                     for (int i=0; i<200 && GlassDesign.IsDark; i++) await Task.Delay(10);
                     Assert.False(GlassDesign.IsDark);
                 }
-                for (int page=0; page<5; page++)
+                for (int page=0; page<6; page++)
                 {
                     var navigation = window.GetLogicalDescendants().OfType<Button>().Single(b => b.Name == "Nav"+page);
                     navigation.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

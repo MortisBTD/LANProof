@@ -10,6 +10,7 @@ public sealed class HistoryWindow
 {
     private readonly MonitoringSession _session;
     private readonly DiagnosticAccumulator _analysis;
+    private readonly MultiDeviceAccumulator _multi=new();
     private readonly long _bucketTicks;
     private readonly Dictionary<(long, string, ProbeType), Bucket> _buckets=[];
     private readonly SortedDictionary<(DateTime,long),ProbeResult> _tail=[];
@@ -26,7 +27,8 @@ public sealed class HistoryWindow
         public ProbeResult? First, Last, Min, Max, Worst;
         public void Add(ProbeResult p)
         {
-            First ??=p; Last=p;
+            if (First==null || p.Timestamp<First.Timestamp || (p.Timestamp==First.Timestamp && p.Id<First.Id)) First=p;
+            if (Last==null || p.Timestamp>Last.Timestamp || (p.Timestamp==Last.Timestamp && p.Id>Last.Id)) Last=p;
             if (p.IsSuccess && p.IsConclusive && p.RoundTripMs.HasValue)
             {
                 if (Min==null || p.RoundTripMs<Min.RoundTripMs) Min=p;
@@ -57,7 +59,7 @@ public sealed class HistoryWindow
         await foreach (var p in _session.StreamMeasurementsAsync(start,end,LastId,throughId,ct))
         {
             LastRowsRead++; TotalRowsRead++;
-            if (cycle.Count>0 && cycle[0].Timestamp!=p.Timestamp) { _analysis.AddCycle(cycle); cycle.Clear(); }
+            if (cycle.Count>0 && cycle[0].Timestamp!=p.Timestamp) { _analysis.AddCycle(cycle);_multi.AddCycle(cycle); cycle.Clear(); }
             cycle.Add(p);
             _tail[(p.Timestamp,p.Id)]=p;
             if (_tail.Count>200) _tail.Remove(_tail.First().Key);
@@ -68,9 +70,10 @@ public sealed class HistoryWindow
                 bucket.Add(p);
             }
         }
-        if (cycle.Count>0) _analysis.AddCycle(cycle);
+        if (cycle.Count>0) {_analysis.AddCycle(cycle);_multi.AddCycle(cycle);}
         LastId=throughId;
         _analysis.TrimBefore(start);
+        _multi.TrimBefore(start);
         foreach (var key in _buckets.Keys.Where(k=>(k.Item1+1)*_bucketTicks<start.Ticks).ToList()) _buckets.Remove(key);
         foreach (var key in _tail.Keys.TakeWhile(k=>k.Item1<start).ToList()) _tail.Remove(key);
         Preview=_buckets.Values.SelectMany(b=>b.Samples()).Concat(_tail.Values).Where(p=>p.Timestamp>=start && p.Timestamp<=end)
@@ -79,5 +82,6 @@ public sealed class HistoryWindow
         int count=await query.CountAsync(ct);
         Events=await query.OrderByDescending(e=>e.StartTime).Take(1500).ToListAsync(ct);
         Report=_analysis.BuildReport(start,end,Preview,Events,count);
+        Report.CrossDeviceFindings=_multi.Findings();
     }
 }

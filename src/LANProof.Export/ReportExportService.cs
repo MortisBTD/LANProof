@@ -56,16 +56,18 @@ public sealed class ReportExportService : IExportService
     {
         await using var writer=new StreamWriter(stream,new UTF8Encoding(true),65536,leaveOpen:true);
         Task Row(params object?[] values)=>writer.WriteLineAsync(string.Join(",",values.Select(CsvCell))).WaitAsync(ct);
-        await writer.WriteLineAsync("record_type,timestamp_utc,device,probe,target,success,is_conclusive,icmp_rtt_ms,dns_resolution_ms,http_headers_ms,jitter_ms,failed_percent,details,layer,severity,end_utc,title");
+        await writer.WriteLineAsync("record_type,timestamp_utc,device,probe,target,success,is_conclusive,icmp_rtt_ms,dns_resolution_ms,http_headers_ms,jitter_ms,failed_percent,details,layer,severity,end_utc,title,clock_uncertainty_ms");
         await Row("report",report.GeneratedAt.ToString("O"),"","","","","","","","","","",
             $"success_rate_percent={report.SuccessRatePercent?.ToString(CultureInfo.InvariantCulture)}; icmp_batch_loss_percent={report.IcmpPacketLossPercent?.ToString(CultureInfo.InvariantCulture)}; " + report.DetailedAnalysis,
-            report.ProbableLayer,"",report.PeriodEnd.ToString("O"),report.Summary);
+            report.ProbableLayer,"",report.PeriodEnd.ToString("O"),report.Summary,"");
+        foreach(var finding in report.CrossDeviceFindings)
+            await Row("cross_device",finding.Timestamp.ToString("O"),"","","","","","","","","","",finding.Evidence,"","","",finding.Summary,"");
         await foreach (var p in measurements.WithCancellation(ct))
             await Row("measurement",p.Timestamp.ToString("O"),p.DeviceId,p.ProbeType,p.Target,p.IsSuccess,p.IsConclusive,
                 p.ProbeType is ProbeType.Gateway or ProbeType.External ? p.RoundTripMs : null,p.DnsResolveMs,p.ProbeType==ProbeType.Http ? p.RoundTripMs : null,
-                p.JitterMs,p.PacketLossPercent,p.Details,EventDetector.Layer(p.ProbeType),"","","");
+                p.JitterMs,p.PacketLossPercent,p.Details,EventDetector.Layer(p.ProbeType),"","","",p.ClockUncertaintyMs);
         await foreach (var e in events.WithCancellation(ct))
-            await Row("event",e.StartTime.ToString("O"),e.DeviceId,"","","","","","","","","",e.Description,e.Layer,e.Severity,e.EndTime?.ToString("O"),e.Title);
+            await Row("event",e.StartTime.ToString("O"),e.DeviceId,"","","","","","","","","",e.Description,e.Layer,e.Severity,e.EndTime?.ToString("O"),e.Title,"");
         await writer.FlushAsync(ct);
     },ct);
 
@@ -121,6 +123,12 @@ public sealed class ReportExportService : IExportService
                         box.Item().Text($"Средняя потеря ICMP по партиям: шлюз — {Percent(report.GatewayPacketLossPercent)}, внешние IP — {Percent(report.ExternalPacketLossPercent)}.");
                     });
                     column.Item().Text(report.DetailedAnalysis);
+                    if(report.CrossDeviceFindings.Count>0)
+                    {
+                        column.Item().Text("Сопоставление устройств").Bold().FontSize(13);
+                        foreach(var finding in report.CrossDeviceFindings)
+                            column.Item().Text($"{finding.Summary} (циклов: {finding.MatchingCycles}). {finding.Evidence}");
+                    }
                     column.Item().Text("Что проверить дальше").Bold().FontSize(13);
                     foreach (var advice in report.Recommendations) column.Item().Text("• " + advice);
                     column.Item().Text("Сводка по уровням").Bold().FontSize(13);
@@ -143,7 +151,7 @@ public sealed class ReportExportService : IExportService
                     });
                     column.Item().Text("Диагностические выводы являются гипотезами. Данные собраны активными проверками; содержимое пользовательского трафика не перехватывается.").FontSize(9);
                 });
-                page.Footer().AlignRight().Text(t => { t.Span("LANProof 0.1 · "); t.CurrentPageNumber(); t.Span(" / "); t.TotalPages(); });
+                page.Footer().AlignRight().Text(t => { t.Span("LANProof 0.2 · "); t.CurrentPageNumber(); t.Span(" / "); t.TotalPages(); });
             })).GeneratePdf(filePath);
         }, ct);
         return filePath;

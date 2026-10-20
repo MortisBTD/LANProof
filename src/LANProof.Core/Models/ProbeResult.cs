@@ -21,6 +21,8 @@ public sealed class ProbeResult
     public bool IsSuccess { get; set; }
     /// <summary>False when the cycle budget or an internal error prevented an observation.</summary>
     public bool IsConclusive { get; set; } = true;
+    /// <summary>Clock alignment uncertainty; null means no trusted alignment for cross-device analysis.</summary>
+    public double? ClockUncertaintyMs { get; set; } = 0;
 
     /// <summary>Round-trip time in milliseconds. Null if the probe failed.</summary>
     public double? RoundTripMs { get; set; }

@@ -5,6 +5,7 @@ namespace LANProof.Core.Models;
 /// </summary>
 public sealed class DiagnosticReport
 {
+    public List<LANProof.Core.Diagnostics.CrossDeviceFinding> CrossDeviceFindings { get; set; }=[];
     /// <summary>Unique identifier.</summary>
     public long Id { get; set; }
 

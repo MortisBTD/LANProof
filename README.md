@@ -2,12 +2,13 @@
 
 <h1 align="center">LANProof</h1>
 
-<p align="center"><strong>Пойми, где пропадает интернет.</strong><br>Локальная диагностика домашней сети для Windows.</p>
+<p align="center"><strong>Пойми, где пропадает интернет.</strong><br>Windows-диагностика и Android-компаньон для домашней сети.</p>
 
 <p align="center">
   <a href="https://github.com/MortisBTD/LANProof/releases"><img src="https://img.shields.io/github/v/release/MortisBTD/LANProof?include_prereleases&label=release&color=087cf4" alt="Версия"></a>
   <a href="https://github.com/MortisBTD/LANProof/actions/workflows/ci.yml"><img src="https://github.com/MortisBTD/LANProof/actions/workflows/ci.yml/badge.svg" alt="Windows CI"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20x64-087cf4" alt="Windows x64">
+  <a href="docs/ANDROID.md"><img src="https://img.shields.io/badge/Android-8.0%2B-12815e" alt="Android 8.0+"></a>
   <img src="https://img.shields.io/badge/.NET-8-512bd4" alt=".NET 8">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/MortisBTD/LANProof?color=12815e" alt="MIT License"></a>
 </p>
@@ -22,7 +23,7 @@
 
 ![LANProof: приборная панель в тёмной теме](docs/screenshots/overview-dark.png)
 
-> **Windows MVP · версия 0.1.** На главном скриншоте — синтетические измерения из UI-теста. Диагностические выводы являются гипотезами, а не доказательством вины провайдера или оборудования.
+> **0.2.0-beta.1 · Windows + Android.** Компаньон — предварительная версия: проверен автотестами и сквозным Kotlin ↔ .NET тестом, физический телефон не использовался. На главном скриншоте — синтетические измерения. Диагнозы являются гипотезами.
 
 Когда связь пропадает на несколько секунд, одного теста скорости мало. LANProof сохраняет измерения во времени и сопоставляет состояние устройства, шлюза, внешних IP, DNS и HTTPS. Историю можно изучить самому или передать в поддержку в виде отчёта.
 
@@ -53,7 +54,7 @@
 2. Распакуйте **всю** папку в доступное для записи место.
 3. Запустите `LANProof.exe`.
 
-Установка .NET и права администратора для готовой сборки не требуются. Мониторинг начинается при открытии окна; при закрытии останавливается. Для разовой проверки сначала остановите мониторинг, затем нажмите **«Проверить сейчас»**. После локальной публикации сборка лежит в `publish/LANProof-Windows-0.1`; её также запускает `Запустить LANProof.cmd` в корне проекта.
+Установка .NET и права администратора для готовой сборки не требуются. Мониторинг начинается при открытии окна; при закрытии останавливается. Для разовой проверки сначала остановите мониторинг, затем нажмите **«Проверить сейчас»**. После локальной публикации сборка лежит в `publish/LANProof-Windows-0.2`; её также запускает `Запустить LANProof.cmd` в корне проекта.
 
 Для запуска из исходников нужен .NET SDK 8 или 9:
 
@@ -73,6 +74,20 @@ dotnet run --project src/LANProof.App
 - Диагностика по сочетанию проверок одного устройства в одном цикле. Предположения о локальной сети, выходе в интернет, DNS, сервисе и ограничении ICMP.
 - JSON и CSV со всеми данными выбранного периода; PDF с выводом, сводкой, последними 100 событиями и 200 измерениями.
 - Проверка и сохранение пользовательских IP, доменов, HTTPS-адресов, таймаутов и интервала.
+- Android-компаньон: Wi-Fi-измерения, SQLite-очередь при обрывах, QR-сопряжение с подтверждением на ПК, TLS и повторная синхронизация без дубликатов.
+- Сопоставление циклов ПК и телефона с учётом погрешности часов; отдельный выбор устройства на графике истории.
+
+## Android-компаньон
+
+Скачайте APK и Windows ZIP **одной версии** из [Releases](https://github.com/MortisBTD/LANProof/releases). На ПК откройте «Компаньон» → включите приём на IPv4 домашней сети → создайте QR. На телефоне отсканируйте QR, нажмите «Подключить» и подтвердите запрос на ПК. Затем запустите запись на Android.
+
+Когда ПК или Wi-Fi недоступны, циклы сохраняются на телефоне; после восстановления связи передаются повторно без дубликатов. Мобильный интернет не подменяет Wi-Fi. APK подписан отладочным ключом для тестирования; Google Play-релиза нет.
+
+**[Инструкция подключения и ограничения](docs/ANDROID.md)** · **[Протокол](docs/COMPANION-PROTOCOL.md)**
+
+<p align="center"><img src="docs/screenshots/android-dark.png" width="280" alt="Android, тёмная тема в Robolectric"> <img src="docs/screenshots/android-light.png" width="280" alt="Android, светлая тема в Robolectric"></p>
+
+Кадры получены в Robolectric. Они не заменяют проверку реальной камеры, Wi-Fi и энергосбережения телефона.
 
 Пример: шлюз доступен, внешние IP и HTTPS одновременно не отвечают → вероятная проблема на выходе в интернет. Если HTTPS работает при отсутствии ICMP, приложение отдельно поясняет возможную фильтрацию ping.
 
@@ -94,7 +109,7 @@ DNS использует системный резолвер: измерение
 
 ## Следующие этапы концепции
 
-Android-компаньон, защищённое сопряжение, офлайн-очередь телефона и межустройственная корреляция пока **не реализованы**. Также не входят в 0.1: фоновая служба/трей, Wi-Fi-анализатор каналов, тест bufferbloat, Game Mode, автоматические уведомления, карта сети. Текущий анализ ограничен Windows-ПК. Полная концепция — в `docs/CONCEPT.md`.
+Android-компаньон, защищённое сопряжение, очередь и две межустройственные гипотезы реализованы в beta. Аппаратная проверка Android ещё не выполнена. Пока не реализованы Windows-служба/трей, Wi-Fi-анализатор каналов, bufferbloat, Game Mode, система уведомлений о сетевых событиях и карта сети. Поддерживается один сопряжённый телефон и локальная IPv4-сеть. Исходная концепция — в `docs/CONCEPT.md`.
 
 ## Структура
 
@@ -113,7 +128,7 @@ Android-компаньон, защищённое сопряжение, офла�
 ```powershell
 dotnet test LANProof.sln -c Release
 dotnet build LANProof.sln -c Release
-dotnet publish src/LANProof.App -c Release -r win-x64 --self-contained true -o publish/LANProof-Windows-0.1
+dotnet publish src/LANProof.App -c Release -r win-x64 --self-contained true -o publish/LANProof-Windows-0.2
 ```
 
 Перегенерация кадров и локального замера истории:
@@ -129,10 +144,10 @@ dotnet test LANProof.sln -c Release
 Интеграционная проверка с реальной сетью и отдельной базой (процесс создаёт JSON, CSV, PDF и `result.txt`):
 
 ```powershell
-Start-Process -FilePath .\publish\LANProof-Windows-0.1\LANProof.exe -ArgumentList '--smoke', "$PWD\work\network-smoke" -Wait
+Start-Process -FilePath .\publish\LANProof-Windows-0.2\LANProof.exe -ArgumentList '--smoke', "$PWD\work\network-smoke" -Wait
 ```
 
-На локальной Windows-сборке проверено **49 тестов**. Синтетический прогон 604 800 измерений: начальное чтение **4,4 с**, обновление по пяти новым строкам — **7 мс**. Это результат одного локального прогона, не гарантия производительности. Статус автоматической проверки GitHub — в [Actions](https://github.com/MortisBTD/LANProof/actions).
+Проверки включают Windows-тесты, Android/Robolectric, отрисовку тем и реальный межъязыковой TLS-обмен с .NET peer. История проверяется на 604 800 синтетических измерениях с последующим чтением только новых строк. Актуальные результаты — в [Actions](https://github.com/MortisBTD/LANProof/actions); отдельный [Android workflow](https://github.com/MortisBTD/LANProof/actions/workflows/android.yml) собирает APK и проверяет протокол.
 
 ## Участие и лицензия
 

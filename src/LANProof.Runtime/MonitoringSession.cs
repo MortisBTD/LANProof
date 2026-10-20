@@ -18,6 +18,7 @@ public sealed class MonitoringSession
     public ProbeConfiguration Configuration { get; private set; } = new();
     public bool IsRunning => _loop is { IsCompleted: false };
     public event Action? Updated;
+    public void NotifyImportedMeasurements() => Updated?.Invoke();
     public string? Error { get; private set; }
     private Task? _loop;
     private CancellationTokenSource? _cts;
@@ -73,6 +74,8 @@ public sealed class MonitoringSession
             e.Description += " Наблюдение прервано; восстановление не подтверждено.";
         }
         var threshold = DateTime.UtcNow.AddDays(-30);
+        var receiptCutoff=new DateTimeOffset(threshold).ToUnixTimeMilliseconds();
+        await db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM CompanionReceipts WHERE TimestampUtcMs < {receiptCutoff}");
         await db.ProbeResults.Where(p => p.Timestamp < threshold).ExecuteDeleteAsync();
         await db.NetworkEvents.Where(e => e.EndTime != null && e.EndTime < threshold).ExecuteDeleteAsync();
         await db.SaveChangesAsync();

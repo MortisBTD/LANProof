@@ -10,17 +10,22 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using LANProof.App.Controls;
 using LANProof.Runtime;
+using LANProof.Runtime.Companion;
 using LANProof.Core.Diagnostics;
 using LANProof.Core.Models;
 using LANProof.Export;
 
 namespace LANProof.App;
 
-public sealed class MainWindow : Window
+public sealed partial class MainWindow : Window
 {
     private static readonly IBrush Ink = GlassDesign.Ink, Muted = GlassDesign.Muted,
         Green = GlassDesign.Green, Red = GlassDesign.Red, Blue = GlassDesign.Blue;
     private readonly MonitoringSession _session;
+    private CompanionHost? _companion;
+    private string _pairingCode="";
+    private string _timelineDevice=Environment.MachineName;
+    private List<ProbeResult> LocalMeasurements()=>_measurements.Where(p=>p.DeviceId==Environment.MachineName).ToList();
     private readonly string _appearancePath;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
@@ -62,7 +67,7 @@ public sealed class MainWindow : Window
     private bool _ready, _busy, _canClose;
     private int _page;
     private string _message = "";
-    private readonly string[] _titles = ["Обзор сети", "История событий", "Диагностика", "Отчёты", "Настройки"];
+    private readonly string[] _titles = ["Обзор сети", "История событий", "Диагностика", "Отчёты", "Настройки", "Android-компаньон"];
 
     public MainWindow(MonitoringSession? session = null, bool autoStart = true, string? appearancePath = null)
     {
@@ -116,10 +121,10 @@ public sealed class MainWindow : Window
         var foot = Stack(14,
             new Border { Padding = new Thickness(0,10),
                 Child = Stack(8, Text("Это устройство", 12, Muted), _device, Text("Данные остаются на ПК", 12, Muted)) },
-            Text("LANProof 0.1  ·  Windows", 10, Muted));
+            Text("LANProof 0.2 beta  ·  Windows", 10, Muted));
         DockPanel.SetDock(foot, Dock.Bottom); side.Children.Add(foot);
         var nav = new StackPanel { Spacing = 8, Margin = new Thickness(0, 28, 0, 28) };
-        var labels = new[] { "Обзор", "История", "Диагностика", "Отчёты", "Настройки" };
+        var labels = new[] { "Обзор", "История", "Диагностика", "Отчёты", "Настройки", "Компаньон" };
         for (int i = 0; i < labels.Length; i++)
         {
             var page = i;
@@ -136,7 +141,7 @@ public sealed class MainWindow : Window
             _navigation.Add(button); nav.Children.Add(button);
         }
         DockPanel.SetDock(nav,Dock.Top); side.Children.Add(nav);
-        side.Children.Add(SidebarChain());
+        side.Children.Add(new ScrollViewer {Content=SidebarChain(),HorizontalScrollBarVisibility=Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled});
         shell.Children.Add(GlassDesign.ShellSurface(side));
 
         var main = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*,Auto"), Margin = new Thickness(28, 8, 6, 0) };
@@ -182,6 +187,7 @@ public sealed class MainWindow : Window
             _lifetime.Cancel();
             try { await _session.StopAsync(); }
             catch (Exception ex) { _message = ex.Message; }
+            if(_companion!=null) await _companion.DisposeAsync();
             _canClose = true; Close();
         };
         RenderPage();
@@ -231,7 +237,7 @@ public sealed class MainWindow : Window
         _toggle.IsEnabled = _ready && !_busy;
         _once.IsEnabled = _ready && !_busy && !_session.IsRunning;
         if (_saveSettings != null) _saveSettings.IsEnabled = !_busy && !_session.IsRunning;
-        var last = _measurements.LastOrDefault()?.Timestamp;
+        var last = LocalMeasurements().LastOrDefault()?.Timestamp;
         _status.FontFamily=GlassDesign.NumericFont;
         _status.Text = last.HasValue ? $"Последний цикл: {last.Value.ToLocalTime():HH:mm:ss}" : "Измерений пока нет";
         if (last.HasValue && last.Value.ToLocalTime().Date != DateTime.Today) _status.Text = $"Последнее измерение {last.Value.ToLocalTime():dd.MM в HH:mm:ss}";
@@ -259,18 +265,18 @@ public sealed class MainWindow : Window
             _navGlyphs[i].Stroke = i == _page ? Blue : Muted;
             _navGlyphs[i].InvalidateVisual();
         }
-        _period.IsVisible = _page != 4;
+        _period.IsVisible = _page is not (4 or 5);
         _intro.Text = _page switch { 1=>"Что происходило с соединением",2=>"Причины отклонений и подтверждающие данные",3=>"Выгрузка измерений за период",4=>"Параметры проверок и хранение",_=>"Сводка по последнему циклу" };
         var offset = _scroll?.Offset ?? default;
-        _body.Content = _page switch { 1 => Timeline(), 2 => Diagnostics(), 3 => Reports(), 4 => Settings(), _ => Overview() };
+        _body.Content = _page switch { 1 => Timeline(), 2 => Diagnostics(), 3 => Reports(), 4 => Settings(), 5=>Companion(), _ => Overview() };
         if (_scroll != null) Dispatcher.UIThread.Post(() => _scroll.Offset = offset, DispatcherPriority.Loaded);
         UpdateHeader();
     }
 
     private bool? CycleHealthy()
     {
-        var time=_measurements.LastOrDefault()?.Timestamp;
-        var cycle=_measurements.Where(p=>p.Timestamp==time).ToList();
+        var local=LocalMeasurements();var time=local.LastOrDefault()?.Timestamp;
+        var cycle=local.Where(p=>p.Timestamp==time).ToList();
         if (cycle.Count==0 || cycle.Any(p=>!p.IsConclusive)) return null;
         return cycle.All(p=>p.IsSuccess && !(p.PacketLossPercent>0)
             && !(p.ProbeType is ProbeType.Gateway or ProbeType.External && (p.RoundTripMs>=_session.Configuration.LatencyWarningMs || p.JitterMs>=_session.Configuration.JitterWarningMs))
@@ -286,7 +292,7 @@ public sealed class MainWindow : Window
         var state=LiveText(()=>"●  "+HeroTitle(),22,bold:true);
         _liveBindings.Add(()=>state.Foreground=!_session.IsRunning ? Muted : CycleHealthy() switch { true=>Green,false=>Red,_=>Muted });
         var summary=Card(Stack(10,state,LiveText(HeroDescription,13,Muted),
-            LiveText(()=>$"Последний цикл: {(_measurements.LastOrDefault()?.Timestamp.ToLocalTime().ToString("HH:mm:ss") ?? "нет данных")}  ·  Период запуска: {_session.Configuration.IntervalSeconds} с",11,Muted)));
+            LiveText(()=>$"Последний цикл ПК: {(LocalMeasurements().LastOrDefault()?.Timestamp.ToLocalTime().ToString("HH:mm:ss") ?? "нет данных")}  ·  Период запуска: {_session.Configuration.IntervalSeconds} с",11,Muted)));
         var bar=new Grid { ColumnDefinitions=new ColumnDefinitions("*,*,*,*") };
         var metrics=new[]
         {
@@ -301,8 +307,8 @@ public sealed class MainWindow : Window
                 BorderThickness=i<3 ? new Thickness(0,0,1,0) : new Thickness(0), Child=metrics[i] };
             Grid.SetColumn(cell,i); bar.Children.Add(cell);
         }
-        var chart=new LatencyChart { Measurements=_measurements, SelectedTime=_selectedTime,MinHeight=130,Height=190 };
-        _liveBindings.Add(()=> { chart.Measurements=_measurements; chart.InvalidateVisual(); });
+        var chart=new LatencyChart { Measurements=LocalMeasurements(), SelectedTime=_selectedTime,MinHeight=130,Height=190 };
+        _liveBindings.Add(()=> { chart.Measurements=LocalMeasurements(); chart.InvalidateVisual(); });
         var detail=LiveText(()=>_selectedTime is {} time ? CycleSummary(time) : "Выберите цикл на графике для просмотра измерений.",13,Muted);
         chart.TimeSelected+=time=> { _selectedTime=time; detail.Text=CycleSummary(time); };
         return Stack(16,summary,Card(bar),Card(Stack(14,Row(Text("Задержка по времени",16,bold:true),Legend()),chart,detail,
@@ -312,8 +318,14 @@ public sealed class MainWindow : Window
     private Control Timeline()
     {
         var selected=new StackPanel { Spacing=9 };
-        var chart=new LatencyChart { Measurements=_measurements,SelectedTime=_selectedTime,Height=280 };
-        _liveBindings.Add(()=> { chart.Measurements=_measurements; chart.InvalidateVisual(); });
+        var devices=_measurements.Select(p=>p.DeviceId).Append(Environment.MachineName).Distinct().Order().ToList();
+        var selector=new ComboBox {ItemsSource=devices,SelectedItem=_timelineDevice,MinWidth=260,FontSize=13};
+        var chart=new LatencyChart { Measurements=_measurements.Where(p=>p.DeviceId==_timelineDevice).ToList(),SelectedTime=_selectedTime,Height=280 };
+        selector.SelectionChanged+=(_,_)=> {if(selector.SelectedItem is string device){_timelineDevice=device;_selectedTime=null;chart.SelectedTime=null;chart.Measurements=_measurements.Where(p=>p.DeviceId==device).ToList();chart.InvalidateVisual();selected.Children.Clear();}};
+        _liveBindings.Add(()=> {
+            var current=_measurements.Select(p=>p.DeviceId).Append(Environment.MachineName).Distinct().Order().ToList();
+            if(!devices.SequenceEqual(current)){devices=current;selector.ItemsSource=current;selector.SelectedItem=_timelineDevice;}
+            chart.Measurements=_measurements.Where(p=>p.DeviceId==_timelineDevice).ToList(); chart.InvalidateVisual(); });
         async Task SelectCycle(DateTime time)
         {
             _selectedTime=time;
@@ -341,7 +353,7 @@ public sealed class MainWindow : Window
             if (_report.TotalEvents>150) eventList.Children.Add(Text("Показаны последние 150 событий. В JSON/CSV экспортируется весь период.",13,Muted));
         }
         UpdateEvents(); _liveBindings.Add(UpdateEvents);
-        return Stack(16,Card(Stack(12,Row(Text("Временная шкала",16,bold:true),Legend()),chart,
+        return Stack(16,Card(Stack(12,Row(Text("Временная шкала",16,bold:true),Legend()),selector,chart,
             Text("Красные отметки — неудачные ICMP-проверки; серые — незавершённые. Отсутствие измерений не означает нормальную работу.",13,Muted))),
             new Border { Padding=new Thickness(2,10),Child=selected },eventList);
     }
@@ -358,12 +370,15 @@ public sealed class MainWindow : Window
             if (_report.Recommendations.Count==0) advice.Children.Add(Text("Рекомендации появятся после получения измерений.",13,Muted));
         }
         UpdateAdvice(); _liveBindings.Add(UpdateAdvice);
-        return Stack(16,Card(Stack(14,Text("АНАЛИЗ ВЫБРАННОГО ПЕРИОДА",11,Muted,true,letterSpacing:1),
+        return Stack(16,Card(Stack(12,Text("Сопоставление ПК и Android",22,bold:true),LiveText(()=>_report.CrossDeviceFindings.Count==0
+            ? "Подтверждённых совпадений пока нет. Нужны измерения обоих устройств с согласованным временем; пропуски и неточные часы не считаются доказательством."
+            : string.Join("\n\n",_report.CrossDeviceFindings.Select(f=>$"{f.Summary} · циклов: {f.MatchingCycles}\n{f.Evidence}")),13,Muted))),
+            Card(Stack(14,Text("АНАЛИЗ ВЫБРАННОГО ПЕРИОДА",11,Muted,true,letterSpacing:1),
             LiveText(()=>_report.Summary,22,bold:true),
             LiveText(()=>_report.ProbableLayer==null ? (_report.TotalMeasurements>0 && !_report.HasAnomalies ? "Отказов не обнаружено" : "Данных для локализации причины недостаточно")
                 : $"Область: {_report.ProbableLayer} · Достоверность гипотезы: {_report.ConfidencePercent}%",13,Muted),
             LiveText(()=>_report.DetailedAnalysis,13,Muted))),Card(advice),Card(Stack(10,Text("Границы диагностики",16,bold:true),
-            Text("Проверки выполняются с этого ПК. ICMP может фильтроваться, DNS — использовать системный кеш. Время ответа HTTPS включает обработку сервиса и установку холодного соединения; это не сетевой ping. Высокая задержка сама по себе не определяет виновника.",13,Muted))));
+            Text("Измерения выполняются на ПК и сопряжённом Android. ICMP может фильтроваться, DNS — использовать кеш. HTTPS — не сетевой RTT. Общий вывод требует близких циклов и погрешности времени не более ±1 секунды на устройство. Высокая задержка сама по себе не определяет виновника.",13,Muted))));
     }
 
     private Control Reports()
@@ -481,7 +496,7 @@ public sealed class MainWindow : Window
     private static string ProbeState(ProbeResult? p)=>p==null ? "Нет данных" : !p.IsConclusive ? "Нет результата" : !p.IsSuccess ? "Нет ответа" : p.PacketLossPercent>0 ? "Частичный сбой" : "Доступно";
     private static IBrush ProbeColor(ProbeResult? p)=>p==null || !p.IsConclusive ? Muted : !p.IsSuccess || p.PacketLossPercent>0 ? Red : Green;
     private static string Pct(double? value)=>value.HasValue ? $"{value.Value:F1}%" : "нет данных";
-    private ProbeResult? Latest(ProbeType type) => _measurements.LastOrDefault(p => p.ProbeType == type);
+    private ProbeResult? Latest(ProbeType type) => _measurements.LastOrDefault(p => p.ProbeType == type && p.DeviceId==Environment.MachineName);
     private string CycleSummary(DateTime time) => time.ToLocalTime().ToString("dd.MM HH:mm:ss") + "  ·  " + string.Join("  /  ",
         _measurements.Where(x => x.Timestamp == time && x.ProbeType is ProbeType.Gateway or ProbeType.External).Select(x => EventDetector.Label(x.ProbeType) + ": " + (x.IsSuccess ? Ms(x.RoundTripMs) : "нет ответа")));
     private static IBrush lossBrush(ProbeResult? p) => p?.PacketLossPercent > 0 ? Red : Green;

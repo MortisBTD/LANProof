@@ -7,7 +7,7 @@ from datetime import datetime
 
 project = Path(__file__).resolve().parents[1]
 outputs = project / 'publish'
-package = outputs / 'LANProof-Windows-0.1'
+package = outputs / 'LANProof-Windows-0.2'
 assert (package / 'LANProof.exe').is_file()
 # The reports explicitly use system Arial. Preserve the unused bundled font
 # outside the distributable instead of carrying it into every ZIP.
@@ -24,7 +24,7 @@ shutil.copytree(project / 'assets', package / 'assets', dirs_exist_ok=True)
 shutil.copytree(project / 'docs', package / 'docs', dirs_exist_ok=True)
 for document in ('CONTRIBUTING.md', 'CHANGELOG.md', 'SECURITY.md'):
     shutil.copy2(project / document, package / document)
-(package / 'START-HERE.txt').write_text('''LANProof 0.1 — приборный интерфейс
+(package / 'START-HERE.txt').write_text('''LANProof 0.2.0-beta.1 — Windows + Android-компаньон
 
 Запуск: LANProof.exe. Установка .NET не требуется.
 Если используете ZIP, сначала распакуйте всю папку приложения.
@@ -40,22 +40,26 @@ for document in ('CONTRIBUTING.md', 'CHANGELOG.md', 'SECURITY.md'):
 Хранилище: папка data в корне проекта; вне проекта — рядом с exe.
 История сохраняется при обновлении приложения.
 
-Эта версия работает с Windows-ПК. Android-компаньон и синхронизация
-между устройствами ещё не реализованы.
+Android APK скачивается отдельно из того же релиза GitHub.
+На Windows откройте «Компаньон», включите приём и создайте QR-код.
+На телефоне отсканируйте QR, подключитесь и подтвердите запрос на ПК.
+Инструкции и ограничения аппаратной проверки: docs/ANDROID.md.
 Подробнее — README.md. Проверки и ограничения — CHECKS.md.
 ''', encoding='utf-8-sig')
-(package / 'CHECKS.md').write_text('''# Проверка LANProof 0.1
+(package / 'CHECKS.md').write_text('''# Проверка LANProof 0.2.0-beta.1
 
 Дата: 21 октября 2026, Москва.
 
 - Release-сборка решения: успешно, 0 ошибок и 0 предупреждений.
-- Автоматические тесты: 49 / 49, без пропусков.
+- Windows / .NET: 58 тестов; Android / Robolectric с loopback peer: 12 тестов, без пропусков.
 - Автономная Windows x64-сборка опубликована вместе с .NET runtime.
 - Реальная сетевая проверка: пять результатов; код завершения 0; JSON, CSV и PDF созданы.
 - Актуальный PDF проверен визуально; русские символы и таблица читаются.
 - Предыдущий интерфейс: проверены запуск, остановка, история, выбор цикла, диагностика, настройки и открытие/отмена диалога экспорта. Фактическая запись через системный диалог автоматизацией не подтверждена; экспортёры проверены программно.
 - Кнопка темы протестирована через событие интерфейса в обе стороны; выбор сохраняется и читается при следующем запуске. При отсутствии настроек используется тёмная тема.
-- Все пять экранов автоматически отрисованы в двух темах через Avalonia Headless / Skia. Основные кадры проверены визуально; материалы сохранены в work/ui-preview проекта. Системные эффекты Acrylic/Mica в headless-проверку не входят.
+- Все шесть Windows-экранов отрисованы в двух темах через Avalonia Headless / Skia. Android-темы отрисованы в Robolectric. Основные кадры просмотрены; материалы — work/ui-preview и work/android-preview. Системные эффекты Acrylic/Mica не проверены.
+- Проверен настоящий TLS-обмен Kotlin ↔ .NET: сопряжение, подтверждение, отправка двух циклов и повтор без дубликатов. На Windows отдельно проверены ошибочный сертификат, отзыв, перезапуск и атомарность импорта.
+- Физический Android-телефон не использовался. Реальные Wi-Fi/ICMP, QR-камера, Android Keystore и энергосбережение производителя требуют аппаратной проверки. APK подписан отладочным ключом для тестирования; это beta, не стабильный Android-релиз.
 - Обновление измерений сохраняет дерево страницы и читает только новые строки; проверено тестом интерфейса.
 - Недельная синтетическая история: 604 800 записей, 1 413 точек превью, полная статистика. Точные времена последнего локального прогона — work/benchmarks/week-history.json; это измерение на данном ПК, не гарантия производительности.
 - Проверены параллельные ICMP-цели, общий предел цикла, расписание запусков, повторное использование реального TCP-соединения HTTP и GET fallback при неподдерживаемом HEAD.
@@ -65,7 +69,7 @@ for document in ('CONTRIBUTING.md', 'CHANGELOG.md', 'SECURITY.md'):
 
 ## Границы версии
 
-Нет Android-компаньона, межустройственной синхронизации, фоновой службы и теста bufferbloat. Выводы являются диагностическими гипотезами. DNS может использовать системный кеш; ICMP может фильтроваться сетью. Уровень сигнала Wi-Fi Windows предоставляет не всегда.
+Поддерживается один Android-компаньон в локальной IPv4-сети. Нет Windows-службы, bufferbloat, Game Mode и карты сети. Выводы являются гипотезами. DNS может использовать кеш; ICMP может фильтроваться сетью или прошивкой Android. Уровень сигнала Wi-Fi Windows предоставляет не всегда. Протокол не проходил независимый аудит.
 ''', encoding='utf-8')
 
 assets = json.loads((project / 'src/LANProof.App/obj/project.assets.json').read_text(encoding='utf-8'))
@@ -119,12 +123,12 @@ for name, library in sorted(assets['libraries'].items()):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, target)
 (package / 'THIRD-PARTY-NOTICES.md').write_text('\n'.join(notices), encoding='utf-8')
-archive = outputs / 'LANProof-Windows-x64-0.1.0.zip'
+archive = outputs / 'LANProof-Windows-x64-0.2.0-beta.1.zip'
 with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as bundle:
     for path in sorted(package.rglob('*')):
         if path.is_file():
             bundle.write(path, path.relative_to(outputs))
 with zipfile.ZipFile(archive) as bundle:
     assert bundle.testzip() is None
-    assert 'LANProof-Windows-0.1/LANProof.exe' in bundle.namelist()
+    assert 'LANProof-Windows-0.2/LANProof.exe' in bundle.namelist()
 print(f'Archive: {archive}\nSize: {archive.stat().st_size / 1024 / 1024:.1f} MB\nFiles: {len(list(package.rglob("*")))}')
