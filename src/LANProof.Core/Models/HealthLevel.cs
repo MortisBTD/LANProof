@@ -15,5 +15,8 @@ public enum HealthLevel
     Unstable,
 
     /// <summary>No internet connection.</summary>
-    Offline
+    Offline,
+
+    /// <summary>Not enough observations to judge.</summary>
+    Unknown
 }

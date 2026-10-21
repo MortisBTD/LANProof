@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.2.0-beta.1</Version>
+    <Version>0.3.0-beta.1</Version>
     <Product>LANProof</Product>
     <AssemblyName>LANProof</AssemblyName>
     <ApplicationIcon>..\..\assets\app\AppIcon.ico</ApplicationIcon>

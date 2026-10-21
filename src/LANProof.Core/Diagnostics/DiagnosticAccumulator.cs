@@ -34,7 +34,10 @@ public sealed class DiagnosticAccumulator(ProbeConfiguration? configuration = nu
             }
             var cycle = new Cycle(group.Key.DeviceId, all.Count, all.Count-observed.Count, observed.Count(p => p.IsSuccess),
                 observed.Count(p => p.IsSuccess && p.PacketLossPercent > 0),
-                observed.Count(p => p.ProbeType is ProbeType.Gateway or ProbeType.External && p.IsSuccess && (p.RoundTripMs >= _config.LatencyWarningMs || p.JitterMs >= _config.JitterWarningMs)),
+                observed.Count(p => p.IsSuccess && !(p.PacketLossPercent > 0) &&
+                    (p.ProbeType is ProbeType.Gateway or ProbeType.External && (p.RoundTripMs >= _config.LatencyWarningMs || p.JitterMs >= _config.JitterWarningMs)
+                    || p.ProbeType == ProbeType.Dns && p.DnsResolveMs >= _config.LatencyWarningMs
+                    || p.ProbeType == ProbeType.Http && p.RoundTripMs >= _config.LatencyWarningMs)),
                 counts, failures, Loss(ProbeType.Gateway), Loss(ProbeType.External), Classify(observed));
             _cycles.Add((group.Key.Timestamp, _sequence++), cycle); Apply(cycle, 1);
         }
@@ -84,8 +87,14 @@ public sealed class DiagnosticAccumulator(ProbeConfiguration? configuration = nu
         if (_total == 0)
         {
             report.Summary="Нет измерений за выбранный период";
+            report.Health=HealthLevel.Unknown;
             report.DetailedAnalysis="Запустите мониторинг. Без измерений нельзя оценить соединение."; return report;
         }
+        int issues = failures+_partial+_degraded;
+        report.Health = observed == 0 ? HealthLevel.Unknown
+            : 100d*failures/observed >= 50 ? HealthLevel.Offline
+            : 100d*issues/observed >= 60 ? HealthLevel.Unstable
+            : issues > 0 ? HealthLevel.Degraded : HealthLevel.Healthy;
         report.DetailedAnalysis=$"Измерений: {_total}; без результата: {_unknown}; неудачных: {failures}; с частичными потерями: {_partial}; с высокой задержкой/джиттером: {_degraded}. Устройств: {_devices.Count}. " +
             "Успешность — доля успешных завершённых проверок. Проверка ICMP может быть успешной при частичных потерях; потери показаны отдельно как среднее по партиям. ";
         var issue = _hypotheses.OrderByDescending(p=>p.Value).ThenBy(p=>p.Key.Summary, StringComparer.Ordinal).FirstOrDefault();
@@ -112,11 +121,15 @@ public sealed class DiagnosticAccumulator(ProbeConfiguration? configuration = nu
         return report;
     }
 
-    private static DiagnosticHypothesis? Classify(IReadOnlyList<ProbeResult> observed)
+    private DiagnosticHypothesis? Classify(IReadOnlyList<ProbeResult> observed)
     {
         var probes=observed.GroupBy(p=>p.ProbeType).ToDictionary(g=>g.Key,g=>g.Last());
-        bool Good(ProbeType t)=>probes.GetValueOrDefault(t) is { IsSuccess:true, PacketLossPercent:null or 0 };
+        bool Good(ProbeType t)=>probes.GetValueOrDefault(t) is { IsSuccess:true, PacketLossPercent:null or 0 } && !Slow(t) && (t != ProbeType.Dns || !SlowDns());
         bool Bad(ProbeType t)=>probes.GetValueOrDefault(t) is { IsSuccess:false };
+        bool Slow(ProbeType t)=>probes.GetValueOrDefault(t) is { IsSuccess:true } p &&
+            (p.PacketLossPercent>=_config.PacketLossWarningPercent || p.RoundTripMs>=_config.LatencyWarningMs || p.JitterMs>=_config.JitterWarningMs);
+        bool SlowDns()=>probes.GetValueOrDefault(ProbeType.Dns) is { IsSuccess:true, DnsResolveMs:{} value } && value>=_config.LatencyWarningMs;
+        double Loss(ProbeType t)=>probes.GetValueOrDefault(t)?.PacketLossPercent ?? 0;
         if (Bad(ProbeType.Adapter)) return new(NetworkLayer.Device,"Не найдено активное подключение со шлюзом","Проверьте кабель, Wi-Fi и состояние сетевого адаптера.",85);
         if (Bad(ProbeType.Gateway)&&Good(ProbeType.Adapter)&&Bad(ProbeType.External)&&Bad(ProbeType.Http)) return new(NetworkLayer.LocalNetwork,"Вероятная проблема между устройством и роутером","Проверьте кабель или Wi-Fi и повторите проверку рядом с роутером. Шлюз также может блокировать ICMP.",70);
         if (Good(ProbeType.Gateway)&&Bad(ProbeType.External)&&Bad(ProbeType.Http)) return new(NetworkLayer.Internet,"Вероятная проблема на выходе в интернет","Проверьте WAN роутера и повторите измерения с другого устройства. Эти данные не доказывают вину провайдера.",75);
@@ -124,6 +137,11 @@ public sealed class DiagnosticAccumulator(ProbeConfiguration? configuration = nu
         if (Bad(ProbeType.Gateway)&&(Good(ProbeType.External)||Good(ProbeType.Http))) return new(NetworkLayer.LocalNetwork,"Шлюз не отвечает на ping, интернет доступен","Проверьте настройки ICMP на роутере. Доступ в интернет в этом цикле сохранялся.",65);
         if (Bad(ProbeType.Dns)&&Good(ProbeType.External)) return new(NetworkLayer.Dns,"Вероятная проблема разрешения имён","Проверьте системный DNS и повторите запросы. Системный кеш может влиять на задержку.",75);
         if (Bad(ProbeType.Http)&&Good(ProbeType.External)&&Good(ProbeType.Dns)) return new(NetworkLayer.Service,"IP и DNS доступны, проверка HTTPS не прошла","Проверьте конкретные адреса, TLS, прокси и состояние сервисов. Измеряется время до HTTP-заголовков, не сетевой RTT.",70);
+        if (Slow(ProbeType.Gateway)&&Good(ProbeType.External)&&Good(ProbeType.Http)) return new(NetworkLayer.LocalNetwork,"Отклонения начинаются на участке до роутера","Сравните Wi-Fi и кабель. Ответы ICMP самого роутера могут ограничиваться; при исправных внешних проверках это не доказывает потери пользовательского трафика.",65);
+        if (Slow(ProbeType.Gateway)&&Slow(ProbeType.External)&&Loss(ProbeType.Gateway)>Loss(ProbeType.External)) return new(NetworkLayer.LocalNetwork,"Потери до шлюза выше, чем за ним","Роутер может реже отвечать на ICMP, чем пересылать трафик. Сравните с кабелем и другим устройством: эти проценты сами по себе не локализуют потери.",60);
+        if (Good(ProbeType.Gateway)&&Slow(ProbeType.External)) return new(NetworkLayer.Internet,"С роутером связь в норме, отклонения начинаются за ним","Сравните с другим устройством этой же сети. Задержка за шлюзом может быть у провайдера или на конкретном маршруте, эти данные их не разделяют.",65);
+        if (Good(ProbeType.External)&&SlowDns()) return new(NetworkLayer.Dns,"Разрешение имён медленное при быстром ICMP","Сравните системный DNS с публичным и повторите запросы к разным доменам. Первый запрос включает прогрев кеша.",60);
+        if (Good(ProbeType.External)&&Good(ProbeType.Dns)&&Slow(ProbeType.Http)) return new(NetworkLayer.Service,"IP и DNS отвечают быстро, HTTPS отвечает медленно","Проверьте конкретные адреса, прокси и состояние сервиса. Измеряется время до заголовков, оно включает обработку на сервере.",60);
         return null;
     }
 }

@@ -14,11 +14,21 @@ namespace LANProof.App;
 
 internal static class Program
 {
+    internal static SingleInstance? Instance { get; private set; }
+
     [STAThread]
     public static int Main(string[] args)
     {
         if (args.Length == 2 && args[0] == "--smoke") return SmokeAsync(args[1]).GetAwaiter().GetResult();
-        try { BuildApp().StartWithClassicDesktopLifetime(args); return 0; }
+        App.LaunchInBackground = Array.Exists(args, a => a == "--background");
+        try
+        {
+            using var instance = OperatingSystem.IsWindows() ? new SingleInstance() : null;
+            if (instance is { IsPrimary:false }) return 0;
+            Instance = instance;
+            BuildApp().StartWithClassicDesktopLifetime(args);
+            return 0;
+        }
         catch (Exception ex)
         {
             var directory = ApplicationPaths.DataDirectory;
@@ -51,6 +61,8 @@ internal static class Program
 
 public sealed class App : Application
 {
+    public static bool LaunchInBackground { get; set; }
+
     public override void Initialize()
     {
         var dark = ThemePreferences.Load(ApplicationPaths.ThemeFile).DarkMode;
@@ -77,7 +89,14 @@ public sealed class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            desktop.MainWindow = new MainWindow();
+        {
+            desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            var window = new MainWindow(background: true);
+            window.Closed += (_, _) => desktop.Shutdown();
+            Program.Instance?.Listen(() => Avalonia.Threading.Dispatcher.UIThread.Post(window.RestoreWindow));
+            if (LaunchInBackground) window.StartWithoutWindow();
+            else desktop.MainWindow = window;
+        }
         base.OnFrameworkInitializationCompleted();
     }
 }

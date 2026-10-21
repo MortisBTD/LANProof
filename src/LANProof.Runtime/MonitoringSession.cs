@@ -18,6 +18,15 @@ public sealed class MonitoringSession
     public ProbeConfiguration Configuration { get; private set; } = new();
     public bool IsRunning => _loop is { IsCompleted: false };
     public event Action? Updated;
+    public event EventHandler<NetworkEvent>? AlertRaised;
+    public event Action<IReadOnlyList<NetworkEvent>>? AlertsUpdated;
+    private IReadOnlyList<NetworkEvent> _activeEvents = Array.Empty<NetworkEvent>();
+    public IReadOnlyList<NetworkEvent> ActiveEvents => Volatile.Read(ref _activeEvents);
+    private static NetworkEvent Snapshot(NetworkEvent e) => new()
+    {
+        Id=e.Id, StartTime=e.StartTime, EndTime=e.EndTime, Severity=e.Severity, Category=e.Category,
+        Layer=e.Layer, Title=e.Title, Description=e.Description, DeviceId=e.DeviceId, ConnectionType=e.ConnectionType
+    };
     public void NotifyImportedMeasurements() => Updated?.Invoke();
     public string? Error { get; private set; }
     private Task? _loop;
@@ -56,9 +65,15 @@ public sealed class MonitoringSession
     private EventDetector CreateDetector()
     {
         var detector = new EventDetector(Configuration);
-        detector.EventDetected += (_, e) => _changed.Add(e);
-        detector.EventResolved += (_, e) => _changed.Add(e);
+        detector.EventDetected += (_, e) => Track(e);
+        detector.EventResolved += (_, e) => Track(e);
         return detector;
+    }
+
+    private void Track(NetworkEvent e)
+    {
+        _changed.Add(e);
+
     }
 
     public async Task InitializeAsync()
@@ -130,6 +145,7 @@ public sealed class MonitoringSession
             }
             await db.SaveChangesAsync();
             _detector = CreateDetector();
+            Volatile.Write(ref _activeEvents, Array.Empty<NetworkEvent>());
         }
         finally { _gate.Release(); }
     }
@@ -154,6 +170,11 @@ public sealed class MonitoringSession
             // Complete a started cycle atomically even if Stop was pressed just after probing.
             await db.SaveChangesAsync(CancellationToken.None);
             await transaction.CommitAsync(CancellationToken.None);
+            var active = _detector.GetActiveEvents().Select(Snapshot).ToArray();
+            Volatile.Write(ref _activeEvents, Array.AsReadOnly(active));
+            // Subscribers receive detached values only after successful persistence.
+            foreach (var e in _changed.Distinct()) AlertRaised?.Invoke(this, Snapshot(e));
+            AlertsUpdated?.Invoke(ActiveEvents);
         }
         finally
         {

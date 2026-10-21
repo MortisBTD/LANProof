@@ -27,6 +27,19 @@ public sealed class SessionTests : IDisposable
         Assert.DoesNotContain("не подтверждено", events[0].Description);
         await session.StopAsync();
     }
+    [Fact] public async Task AlertSnapshotsAreCommittedAndDetachedFromDetector()
+    {
+        int cycle=0; var session=new MonitoringSession(_directory,_=>[new Probe(cycle++>0)]);
+        await session.InitializeAsync();
+        var snapshots=new List<IReadOnlyList<NetworkEvent>>();
+        session.AlertsUpdated += snapshot=>snapshots.Add(snapshot);
+        await session.MeasureAsync();
+        var original=Assert.Single(Assert.Single(snapshots));
+        Assert.True(original.Id>0); Assert.Null(original.EndTime);
+        await session.MeasureAsync();
+        Assert.Empty(snapshots[1]); Assert.Null(original.EndTime);
+        await session.StopAsync(); Assert.Empty(session.ActiveEvents);
+    }
     [Fact] public async Task StoppingDoesNotInventARecovery()
     {
         var session = new MonitoringSession(_directory, _ => [new Probe(false)]);

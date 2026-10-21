@@ -33,7 +33,7 @@ jobs:
       - name: Test
         run: dotnet test LANProof.sln -c Release --no-build --logger "trx;LogFileName=tests.trx" --results-directory work/test-results
       - name: Publish Windows x64
-        run: dotnet publish src/LANProof.App -c Release -r win-x64 --self-contained true -o publish/LANProof-Windows-0.2
+        run: dotnet publish src/LANProof.App -c Release -r win-x64 --self-contained true -o publish/LANProof-Windows-0.3
       - name: Upload test evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

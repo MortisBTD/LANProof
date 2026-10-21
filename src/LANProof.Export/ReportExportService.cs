@@ -151,7 +151,7 @@ public sealed class ReportExportService : IExportService
                     });
                     column.Item().Text("Диагностические выводы являются гипотезами. Данные собраны активными проверками; содержимое пользовательского трафика не перехватывается.").FontSize(9);
                 });
-                page.Footer().AlignRight().Text(t => { t.Span("LANProof 0.2 · "); t.CurrentPageNumber(); t.Span(" / "); t.TotalPages(); });
+                page.Footer().AlignRight().Text(t => { t.Span("LANProof 0.3 · "); t.CurrentPageNumber(); t.Span(" / "); t.TotalPages(); });
             })).GeneratePdf(filePath);
         }, ct);
         return filePath;

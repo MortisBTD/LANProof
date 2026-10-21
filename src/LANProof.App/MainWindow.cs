@@ -65,12 +65,18 @@ public sealed partial class MainWindow : Window
     private DateTime _periodStart;
     private DateTime _periodEnd;
     private bool _ready, _busy, _canClose;
+    private readonly bool _background;
+    private readonly bool _autoStart;
+    private bool _initialized, _closing;
     private int _page;
     private string _message = "";
     private readonly string[] _titles = ["Обзор сети", "История событий", "Диагностика", "Отчёты", "Настройки", "Android-компаньон"];
 
-    public MainWindow(MonitoringSession? session = null, bool autoStart = true, string? appearancePath = null)
+    public MainWindow(MonitoringSession? session = null, bool autoStart = true, string? appearancePath = null,
+        bool background = false)
     {
+        _background = background;
+        _autoStart = autoStart;
         _session = session ?? new MonitoringSession();
         _appearancePath = appearancePath ?? ApplicationPaths.ThemeFile;
         Title = "LANProof — диагностика соединения";
@@ -121,7 +127,7 @@ public sealed partial class MainWindow : Window
         var foot = Stack(14,
             new Border { Padding = new Thickness(0,10),
                 Child = Stack(8, Text("Это устройство", 12, Muted), _device, Text("Данные остаются на ПК", 12, Muted)) },
-            Text("LANProof 0.2 beta  ·  Windows", 10, Muted));
+            Text("LANProof 0.3 beta  ·  Windows", 10, Muted));
         DockPanel.SetDock(foot, Dock.Bottom); side.Children.Add(foot);
         var nav = new StackPanel { Spacing = 8, Margin = new Thickness(0, 28, 0, 28) };
         var labels = new[] { "Обзор", "История", "Диагностика", "Отчёты", "Настройки", "Компаньон" };
@@ -170,27 +176,45 @@ public sealed partial class MainWindow : Window
 
         _period.SelectionChanged += async (_, _) => { if (_ready) await Guard(RefreshAsync); };
         _session.Updated += OnSessionUpdated;
-        Opened += async (_, _) => await Guard(async () =>
-        {
-            await Task.Run(_session.InitializeAsync);
-            _ready = true;
-            await RefreshAsync();
-            if (autoStart) _session.Start();
-            UpdateHeader();
-        });
+        Opened += async (_, _) => await InitializeWindowAsync();
         Closing += async (_, args) =>
         {
+            if (_background && _tray is not null && !_canClose && !_exitRequested) { args.Cancel = true; Hide(); return; }
             if (_canClose) return;
             args.Cancel = true;
+            if (_closing) return;
+            _closing = true;
             _ready = false;
             _session.Updated -= OnSessionUpdated;
             _lifetime.Cancel();
             try { await _session.StopAsync(); }
             catch (Exception ex) { _message = ex.Message; }
-            if(_companion!=null) await _companion.DisposeAsync();
+            try { if(_companion!=null) await _companion.DisposeAsync(); }
+            catch (Exception ex) { _message = ex.Message; }
+            if (_background) StopBackgroundMode();
             _canClose = true; Close();
         };
         RenderPage();
+    }
+
+    // Hidden startup initializes the session without ever showing the main window.
+    public async void StartWithoutWindow() => await InitializeWindowAsync();
+
+    private async Task InitializeWindowAsync()
+    {
+        if (_initialized) return;
+        _initialized = true;
+        await Guard(async () =>
+        {
+            if (_background) StartBackgroundMode();
+            await Task.Run(_session.InitializeAsync);
+            if (_closing) return;
+            _ready = true;
+            await RefreshAsync();
+            if (_autoStart && !_closing) _session.Start();
+            UpdateHeader();
+        });
+        if ((!_ready || (_background && _tray is null)) && !_closing) RestoreWindow();
     }
 
     private void OnSessionUpdated()
@@ -233,6 +257,7 @@ public sealed partial class MainWindow : Window
 
     private void UpdateHeader()
     {
+        UpdateTray();
         _toggle.Content = _session.IsRunning ? "Приостановить" : "Начать мониторинг";
         _toggle.IsEnabled = _ready && !_busy;
         _once.IsEnabled = _ready && !_busy && !_session.IsRunning;
@@ -370,14 +395,33 @@ public sealed partial class MainWindow : Window
             if (_report.Recommendations.Count==0) advice.Children.Add(Text("Рекомендации появятся после получения измерений.",13,Muted));
         }
         UpdateAdvice(); _liveBindings.Add(UpdateAdvice);
+        string Outcome(ProbeResult m)=>!m.IsConclusive ? "не измерено" : !m.IsSuccess ? "не прошла"
+            : m.PacketLossPercent>0 ? $"потери {m.PacketLossPercent:F0}%" : m.DnsResolveMs is {} dns ? $"{dns:F0} мс" : m.RoundTripMs is {} rtt ? $"{rtt:F0} мс" : "успешно";
+        var evidence=new StackPanel { Spacing=10 };
+        string? evidenceFingerprint=null;
+        void UpdateEvidence()
+        {
+            var sample=_report.SupportingMeasurements;
+            var next=string.Join(";",sample.Take(40).Select(m=>$"{m.Id}:{m.Timestamp.Ticks}:{m.IsSuccess}:{m.IsConclusive}:{m.RoundTripMs}:{m.DnsResolveMs}:{m.PacketLossPercent}"))+$"|{sample.Count}|{_report.MeasurementsAreSampled}";
+            if (next==evidenceFingerprint) return; evidenceFingerprint=next;
+            evidence.Children.Clear();
+            evidence.Children.Add(Text("Измерения, на которых построен вывод",16,bold:true));
+            if (sample.Count==0) { evidence.Children.Add(Text("Измерений за этот период нет — вывод строить не на чем.",13,Muted)); return; }
+            foreach (var m in sample.Take(40)) evidence.Children.Add(Row(
+                Text($"{m.Timestamp.ToLocalTime():HH:mm:ss}  {EventDetector.Label(m.ProbeType)}  {m.Target}",13,Muted),
+                Text(Outcome(m),13,!m.IsConclusive?Muted:m.IsSuccess?Ink:Red)));
+            if (sample.Count>40) evidence.Children.Add(Text($"Показаны 40 из {sample.Count:N0} измерений выборки.",13,Muted));
+            if (_report.MeasurementsAreSampled) evidence.Children.Add(Text("Выборка сокращена; полный набор — в экспорте JSON или CSV.",13,Muted));
+        }
+        UpdateEvidence(); _liveBindings.Add(UpdateEvidence);
         return Stack(16,Card(Stack(12,Text("Сопоставление ПК и Android",22,bold:true),LiveText(()=>_report.CrossDeviceFindings.Count==0
             ? "Подтверждённых совпадений пока нет. Нужны измерения обоих устройств с согласованным временем; пропуски и неточные часы не считаются доказательством."
             : string.Join("\n\n",_report.CrossDeviceFindings.Select(f=>$"{f.Summary} · циклов: {f.MatchingCycles}\n{f.Evidence}")),13,Muted))),
             Card(Stack(14,Text("АНАЛИЗ ВЫБРАННОГО ПЕРИОДА",11,Muted,true,letterSpacing:1),
             LiveText(()=>_report.Summary,22,bold:true),
-            LiveText(()=>_report.ProbableLayer==null ? (_report.TotalMeasurements>0 && !_report.HasAnomalies ? "Отказов не обнаружено" : "Данных для локализации причины недостаточно")
-                : $"Область: {_report.ProbableLayer} · Достоверность гипотезы: {_report.ConfidencePercent}%",13,Muted),
-            LiveText(()=>_report.DetailedAnalysis,13,Muted))),Card(advice),Card(Stack(10,Text("Границы диагностики",16,bold:true),
+            LiveText(()=>(_report.ProbableLayer==null ? (_report.TotalMeasurements>0 && !_report.HasAnomalies ? "Отказов не обнаружено" : "Данных для локализации причины недостаточно")
+                : $"Область: {_report.ProbableLayer} · Достоверность гипотезы: {_report.ConfidencePercent}%")+$" · Состояние: {HealthLabel(_report.Health)}",13,Muted),
+            LiveText(()=>_report.DetailedAnalysis,13,Muted))),Card(advice),Card(evidence),Card(Stack(10,Text("Границы диагностики",16,bold:true),
             Text("Измерения выполняются на ПК и сопряжённом Android. ICMP может фильтроваться, DNS — использовать кеш. HTTPS — не сетевой RTT. Общий вывод требует близких циклов и погрешности времени не более ±1 секунды на устройство. Высокая задержка сама по себе не определяет виновника.",13,Muted))));
     }
 
@@ -455,7 +499,7 @@ public sealed partial class MainWindow : Window
         }, accent: true);
         save.IsEnabled = !_session.IsRunning;
         _saveSettings = save;
-        return Stack(16, Card(Stack(18, Text("Параметры измерений", 21, bold: true),
+        return Stack(16, BackgroundSection(), Card(Stack(18, Text("Параметры измерений", 21, bold: true),
             Text("Остановите мониторинг перед изменением настроек. Проверки создают небольшой активный трафик к указанным адресам.", 13, Muted),
             Field("Период запуска циклов, секунды", interval, "Запуск по расписанию без добавления длительности предыдущего цикла. Циклы не пересекаются."),
             Field("Таймаут DNS/HTTPS, мс", timeout, "От 100 до 30000. Разные цели проверяются параллельно."),
@@ -467,7 +511,7 @@ public sealed partial class MainWindow : Window
             Field("Сервисы HTTPS", urls, "HEAD-запросы, ответы 2xx успешны. Время до заголовков включает сервис и холодное соединение, а не только сеть."), save)),
             Card(Stack(10, Text("Хранение и приватность", 17, bold: true),
                 Text("SQLite: " + _session.DatabasePath + "\nНастройки: " + _session.SettingsPath, 12, Muted),
-                Text("Данные остаются на ПК. Измерения старше 30 дней очищаются при запуске. Приложение не перехватывает пользовательский трафик. При закрытии окна мониторинг останавливается. VPN и виртуальные адаптеры могут влиять на выбор шлюза.", 13, Muted))));
+                Text("Данные остаются на ПК. Измерения старше 30 дней очищаются при запуске. Приложение не перехватывает пользовательский трафик. " + (_background ? "При закрытии окна измерения продолжаются в трее." : "При закрытии окна мониторинг останавливается.") + " VPN и виртуальные адаптеры могут влиять на выбор шлюза.", 13, Muted))));
     }
 
     private Control SidebarChain()
@@ -520,6 +564,11 @@ public sealed partial class MainWindow : Window
         return Stack(16,Text(title,13,Muted),number);
     }
     private static IBrush Brush(string color) => GlassDesign.Brush(color);
+    private static string HealthLabel(HealthLevel health)=>health switch
+    {
+        HealthLevel.Healthy=>"норма", HealthLevel.Degraded=>"небольшие отклонения",
+        HealthLevel.Unstable=>"нестабильно", HealthLevel.Offline=>"много неудачных проверок", _=>"недостаточно данных"
+    };
     private static TextBlock Text(string value, double size = 13, IBrush? color = null, bool bold = false,double letterSpacing=0) => new()
     {
         Text = value, FontSize = size<=11 ? 11 : size<=14 ? 13 : size<=19 ? 16 : size<=29 ? 22 : 34,

@@ -74,7 +74,7 @@ public sealed class ThemeUiTests
         var directory = Path.Combine(Path.GetTempPath(), "LANProof-layout-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         var window = new MainWindow(new MonitoringSession(directory), autoStart: false,
-            appearancePath: Path.Combine(directory,"appearance.json"));
+            appearancePath: Path.Combine(directory,"appearance.json"), background:true);
         try
         {
             GlassDesign.SetDark(true); Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;
@@ -111,7 +111,7 @@ public sealed class ThemeUiTests
         }
         finally
         {
-            window.Close();
+            window.ExitApplication();
             for (int i=0; i<200 && window.IsVisible; i++) await Task.Delay(10);
             Assert.False(window.IsVisible);
             GlassDesign.SetDark(true); Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;

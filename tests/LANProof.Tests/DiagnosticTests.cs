@@ -56,6 +56,49 @@ public sealed class DiagnosticTests
         var probe = P(ProbeType.External, true); probe.RoundTripMs = 500;
         Assert.Contains("отклонения", Analyze(probe).Summary);
     }
+    [Fact] public void LossToGatewayWithWorkingInternetLocatesLocalSegment()
+    {
+        var gateway = P(ProbeType.Gateway, true); gateway.PacketLossPercent = 12;
+        var report = Analyze(gateway, P(ProbeType.External, true), P(ProbeType.Http, true));
+        Assert.Equal(NetworkLayer.LocalNetwork, report.ProbableLayer);
+        Assert.Equal(HealthLevel.Degraded, report.Health);
+    }
+    [Fact] public void LatencyBeyondHealthyGatewayLocatesInternet()
+    {
+        var external = P(ProbeType.External, true); external.RoundTripMs = 240;
+        var report = Analyze(P(ProbeType.Gateway, true), external);
+        Assert.Equal(NetworkLayer.Internet, report.ProbableLayer);
+        Assert.Equal(HealthLevel.Degraded, report.Health);
+    }
+    [Fact] public void SlowDnsWithFastIcmpLocatesDns()
+    {
+        var dns = P(ProbeType.Dns, true); dns.DnsResolveMs = 400;
+        var report = Analyze(P(ProbeType.External, true), dns);
+        Assert.Equal(NetworkLayer.Dns, report.ProbableLayer);
+        Assert.Equal(HealthLevel.Degraded, report.Health); Assert.True(report.HasAnomalies);
+    }
+    [Fact] public void CleanPeriodReportsHealthy()
+    {
+        var report = Analyze(P(ProbeType.Gateway, true), P(ProbeType.External, true), P(ProbeType.Http, true));
+        Assert.Equal(HealthLevel.Healthy, report.Health); Assert.False(report.HasAnomalies);
+    }
+    [Fact] public void FailedProbesReportOffline()
+    {
+        var report = Analyze(P(ProbeType.Gateway, false), P(ProbeType.External, false), P(ProbeType.Http, false));
+        Assert.Equal(HealthLevel.Offline, report.Health);
+    }
+    [Fact] public void LossAndLatencyDoNotCountSameObservationTwice()
+    {
+        var gateway=P(ProbeType.Gateway,true); gateway.PacketLossPercent=12; gateway.RoundTripMs=400;
+        var report=Analyze(gateway,P(ProbeType.External,true),P(ProbeType.Http,true));
+        Assert.Equal(HealthLevel.Degraded,report.Health);
+    }
+    [Fact] public void SlowGatewayCannotBeCalledHealthyWhenExternalIsSlow()
+    {
+        var gateway=P(ProbeType.Gateway,true); gateway.RoundTripMs=300;
+        var external=P(ProbeType.External,true); external.RoundTripMs=400;
+        Assert.Null(Analyze(gateway,external).ProbableLayer);
+    }
     [Fact] public void EventsDeduplicateAndResolveOnlySameDeviceAndTarget()
     {
         var detector = new EventDetector(new());

@@ -7,7 +7,7 @@ from datetime import datetime
 
 project = Path(__file__).resolve().parents[1]
 outputs = project / 'publish'
-package = outputs / 'LANProof-Windows-0.2'
+package = outputs / 'LANProof-Windows-0.3'
 assert (package / 'LANProof.exe').is_file()
 # The reports explicitly use system Arial. Preserve the unused bundled font
 # outside the distributable instead of carrying it into every ZIP.
@@ -24,7 +24,7 @@ shutil.copytree(project / 'assets', package / 'assets', dirs_exist_ok=True)
 shutil.copytree(project / 'docs', package / 'docs', dirs_exist_ok=True)
 for document in ('CONTRIBUTING.md', 'CHANGELOG.md', 'SECURITY.md'):
     shutil.copy2(project / document, package / document)
-(package / 'START-HERE.txt').write_text('''LANProof 0.2.0-beta.1 — Windows + Android-компаньон
+(package / 'START-HERE.txt').write_text('''LANProof 0.3.0-beta.1 — Windows + Android-компаньон
 
 Запуск: LANProof.exe. Установка .NET не требуется.
 Если используете ZIP, сначала распакуйте всю папку приложения.
@@ -32,7 +32,8 @@ for document in ('CONTRIBUTING.md', 'CHANGELOG.md', 'SECURITY.md'):
 Мониторинг начнётся при открытии окна. Кнопка «Приостановить»
 останавливает сбор данных, после чего можно выполнить разовую проверку.
 История, диагностика, отчёты и настройки доступны в боковом меню.
-При закрытии окна мониторинг останавливается.
+При закрытии окна мониторинг продолжается в трее. Полный выход — через меню трея.
+Автозапуск включается в настройках; --background запускает приложение без окна.
 
 По умолчанию включена тёмная тема. Кнопка «Светлая тема» в верхней
 панели переключает оформление без перезапуска. Выбор сохраняется.
@@ -40,18 +41,21 @@ for document in ('CONTRIBUTING.md', 'CHANGELOG.md', 'SECURITY.md'):
 Хранилище: папка data в корне проекта; вне проекта — рядом с exe.
 История сохраняется при обновлении приложения.
 
-Android APK скачивается отдельно из того же релиза GitHub.
+Android APK 0.2.0-beta.1 скачивается из предыдущего релиза GitHub.
+https://github.com/MortisBTD/LANProof/releases/tag/v0.2.0-beta.1
 На Windows откройте «Компаньон», включите приём и создайте QR-код.
 На телефоне отсканируйте QR, подключитесь и подтвердите запрос на ПК.
 Инструкции и ограничения аппаратной проверки: docs/ANDROID.md.
 Подробнее — README.md. Проверки и ограничения — CHECKS.md.
 ''', encoding='utf-8-sig')
-(package / 'CHECKS.md').write_text('''# Проверка LANProof 0.2.0-beta.1
+(package / 'CHECKS.md').write_text('''# Проверка LANProof 0.3.0-beta.1
 
 Дата: 21 октября 2026, Москва.
 
 - Release-сборка решения: успешно, 0 ошибок и 0 предупреждений.
-- Windows / .NET: 58 тестов; Android / Robolectric с loopback peer: 12 тестов, без пропусков.
+- Windows / .NET: 78 тестов, без пропусков. Android проверяется отдельным CI.
+- Дополнительно: настоящий Windows-бэкенд Avalonia, скрытый старт, закрытие в трей, возврат, запись, пауза/возобновление и выход до показа окна. Команды вызваны программно. Физический клик по значку Explorer и вход после перезагрузки не проверены.
+- Собственные уведомления отрисованы в двух темах; проверены очередь, закрытие, подавление и отсутствие ложного восстановления.
 - Автономная Windows x64-сборка опубликована вместе с .NET runtime.
 - Реальная сетевая проверка: пять результатов; код завершения 0; JSON, CSV и PDF созданы.
 - Актуальный PDF проверен визуально; русские символы и таблица читаются.
@@ -123,12 +127,12 @@ for name, library in sorted(assets['libraries'].items()):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, target)
 (package / 'THIRD-PARTY-NOTICES.md').write_text('\n'.join(notices), encoding='utf-8')
-archive = outputs / 'LANProof-Windows-x64-0.2.0-beta.1.zip'
+archive = outputs / 'LANProof-Windows-x64-0.3.0-beta.1.zip'
 with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as bundle:
     for path in sorted(package.rglob('*')):
         if path.is_file():
             bundle.write(path, path.relative_to(outputs))
 with zipfile.ZipFile(archive) as bundle:
     assert bundle.testzip() is None
-    assert 'LANProof-Windows-0.2/LANProof.exe' in bundle.namelist()
+    assert 'LANProof-Windows-0.3/LANProof.exe' in bundle.namelist()
 print(f'Archive: {archive}\nSize: {archive.stat().st_size / 1024 / 1024:.1f} MB\nFiles: {len(list(package.rglob("*")))}')

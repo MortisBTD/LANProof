@@ -28,6 +28,9 @@ public sealed class DiagnosticReport
     public bool MeasurementsAreSampled { get; set; }
     public int TotalEvents { get; set; }
     public bool HasAnomalies { get; set; }
+
+    /// <summary>State derived from observed outcomes across the period.</summary>
+    public HealthLevel Health { get; set; }
     public List<ProbeSummary> ProbeSummaries { get; set; } = [];
 
     /// <summary>The most likely problem area.</summary>
